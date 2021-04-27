@@ -56,8 +56,9 @@ def read_COCOA(ann, h, w):
 
 class CustomCOCOADataset(Dataset):
 
-    def __init__(self, annot_fn):
+    def __init__(self, annot_fn, train=True):
         data = cvb.load(annot_fn)
+        self.train = train
         self.images_info = data['images']
         self.annot_info = data['annotations']
 
@@ -67,47 +68,23 @@ class CustomCOCOADataset(Dataset):
                 self.indexing.append((i, j))
 
     def __len__(self):
-        return self.get_instance_length()
+        return len(self.images_info)
     
     def __getitem__(self, idx): 
-        return self.get_gt_ordering(idx), self.get_instance(idx), self.get_image_instances(idx)
+        modal, category, ori_bboxes, amodal_gt, image_fn = self.get_image_instances(img_idx, with_gt=True, ignore_stuff=True)
+        image_fn = os.path.join(img_root, image_fn)
+        img = Image.open(image_fn)
+        height, width = img.height, img.width
+        image = np.array(img)
+        
+        phase = 'train' if self.train else 'val'
+        
+        graph_path = "../data/COCOA/pixel_graphs/" + phase + '/' + str(idx) + '.txt'
+        
+        segmentation = np.sum(modal, axis=0)
+        
+        return image, (segmentation, torch.load(graph_path)), segmentation > 0
     
-    def get_instance_length(self):
-        return len(self.indexing)
-
-    def get_image_length(self):
-        return len(self.images_info)
-
-    def get_gt_ordering(self, imgidx):
-        num = len(self.annot_info[imgidx]['regions'])
-        gt_order_matrix = np.zeros((num, num), dtype=np.int)
-        order_str = self.annot_info[imgidx]['depth_constraint']
-        if len(order_str) == 0:
-            return gt_order_matrix
-        order_str = order_str.split(',')
-        for o in order_str:
-            idx1, idx2 = o.split('-')
-            idx1, idx2 = int(idx1) - 1, int(idx2) - 1
-            gt_order_matrix[idx1, idx2] = 1
-            gt_order_matrix[idx2, idx1] = -1
-        return gt_order_matrix # num x num
-
-    def get_instance(self, idx, with_gt=False):
-        imgidx, regidx = self.indexing[idx]
-        # img
-        img_info = self.images_info[imgidx]
-        image_fn = img_info['file_name']
-        w, h = img_info['width'], img_info['height']
-        # region
-        reg = self.annot_info[imgidx]['regions'][regidx]
-        modal, bbox, category = read_COCOA(reg, h, w)
-        if with_gt:
-            amodal = maskUtils.decode(maskUtils.merge(
-                maskUtils.frPyObjects([reg['segmentation']], h, w)))
-        else:
-            amodal = None
-        return modal, bbox, category, image_fn, amodal
-
     def get_image_instances(self, idx, with_gt=False, with_anns=False, ignore_stuff=False):
         ann_info = self.annot_info[idx]
         img_info = self.images_info[idx]
