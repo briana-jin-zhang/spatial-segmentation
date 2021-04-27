@@ -54,6 +54,70 @@ def read_COCOA(ann, h, w):
         bbox = utils.mask_to_bbox(modal)
     return modal, bbox, 1 # category as constant 1
 
+class COCOADatasetGraph(Dataset):
+
+    def __init__(self, annot_fn, img_root, graph_dir, transform=None):
+        data = cvb.load(annot_fn)
+        self.img_root = img_root
+        self.graph_dir = graph_dir
+        self.transform = transform
+        self.images_info = data['images']
+        self.annot_info = data['annotations']
+
+    def __len__(self):
+        return len(self.images_info)
+    
+    def seed_transform(self, seed):
+        random.seed(seed)
+        torch.manual_seed(seed)
+    
+    def __getitem__(self, idx): 
+        modal, category, ori_bboxes, amodal_gt, image_fn = self.get_image_instances(idx, with_gt=True, ignore_stuff=True)
+        image_fn = os.path.join(self.img_root, image_fn)
+        img = Image.open(image_fn).convert('RGB')
+        height, width = img.height, img.width
+        image = np.array(img)
+        
+        graph_path = os.path.join(self.graph_dir, str(idx) + '_graph')
+        mask_path = os.path.join(self.graph_dir, str(idx) + '_mask')
+        graph, mask = np.array(torch.load(graph_path)), np.array(torch.load(mask_path))
+        
+        if self.transform:
+            seed = np.random.randint(2147483647)
+            self.seed_transform(seed)
+            image = self.transform(image)
+            self.seed_transform(seed)
+            graph = self.transform(graph)
+            self.seed_transform(seed)
+            mask = self.transform(mask)
+        
+        return image, graph, mask
+    
+    def get_image_instances(self, idx, with_gt=False, with_anns=False, ignore_stuff=False):
+        ann_info = self.annot_info[idx]
+        img_info = self.images_info[idx]
+        image_fn = img_info['file_name']
+        w, h = img_info['width'], img_info['height']
+        ret_modal = []
+        ret_bboxes = []
+        ret_category = []
+        ret_amodal = []
+        for reg in ann_info['regions']:
+            if ignore_stuff and reg['isStuff']:
+                continue
+            modal, bbox, category = read_COCOA(reg, h, w)
+            ret_modal.append(modal)
+            ret_bboxes.append(bbox)
+            ret_category.append(category)
+            if with_gt:
+                amodal = maskUtils.decode(maskUtils.merge(
+                    maskUtils.frPyObjects([reg['segmentation']], h, w)))
+                ret_amodal.append(amodal)
+        if with_anns:
+            return np.array(ret_modal), np.array(ret_category), np.array(ret_bboxes), np.array(ret_amodal), image_fn, ann_info
+        else:
+            return np.array(ret_modal), np.array(ret_category), np.array(ret_bboxes), np.array(ret_amodal), image_fn
+
 class CustomCOCOADataset(Dataset):
 
     def __init__(self, annot_fn, train=True):
