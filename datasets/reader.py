@@ -11,6 +11,8 @@ import cvbase as cvb
 import pycocotools.mask as maskUtils
 import utils
 from torch.utils.data import Dataset
+import os
+import torch 
 
 def read_KINS(ann):
     modal = maskUtils.decode(ann['inmodal_seg']) # HW, uint8, {0, 1}
@@ -207,19 +209,42 @@ class CustomCOCOADataset(Dataset):
         return len(self.images_info)
     
     def __getitem__(self, idx): 
-        modal, category, ori_bboxes, amodal_gt, image_fn = self.get_image_instances(img_idx, with_gt=True, ignore_stuff=True)
+        ignore_stuff = idx not in [14, 137, 281, 696, 802, 841, 1013, 1080, 1098, 1134, 1217, 1241, 1255, 
+                                   1257, 1420, 1679, 1684, 1739, 1813, 1817, 1954, 2052, 2126, 2149]
+        modal, category, ori_bboxes, amodal_gt, image_fn = self.get_image_instances(idx, with_gt=True, ignore_stuff=ignore_stuff)
+        
+        phase = 'train' if self.train else 'val'
+        
+        root_dict = {'train': "../data/COCOA/train2014", 'val': "../data/COCOA/val2014"}
+        img_root = root_dict[phase]
         image_fn = os.path.join(img_root, image_fn)
         img = Image.open(image_fn)
         height, width = img.height, img.width
         image = np.array(img)
         
-        phase = 'train' if self.train else 'val'
-        
         graph_path = "../data/COCOA/pixel_graphs/" + phase + '/' + str(idx) + '.txt'
+        graph = torch.load(graph_path) if os.path.exists(graph_path) else None 
         
         segmentation = np.sum(modal, axis=0)
         
-        return image, (segmentation, torch.load(graph_path)), segmentation > 0
+#         if (modal.shape != image.shape[:2]):
+#             print('image' + str(idx) + 'mismatching shapes')
+#             print(modal.shape)
+#             print(image.shape)
+            # image844mismatching shapes
+            # (3, 375, 500)
+            # (375, 500, 3)
+        
+#         mask = segmentation > 0
+        
+#         print('image dtype', image.dtype)
+#         print('seg dtype', segmentation.dtype)
+#         print('mask dtype', mask.dtype)
+#         image dtype uint8
+#         seg dtype uint64
+#         mask dtype bool
+        
+        return image, (segmentation.astype('int64'), torch.load(graph_path)), segmentation > 0
     
     def get_image_instances(self, idx, with_gt=False, with_anns=False, ignore_stuff=False):
         ann_info = self.annot_info[idx]
