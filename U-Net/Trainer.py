@@ -125,8 +125,8 @@ class MaskTrainer:
     def evaluate(self, batch):
         self.net.eval()
         _in = batch[self.in_key].to(self.device)
-        output = self.net(_in)
-        return output.cpu().detach().numpy()
+        outputs = self.net(_in)
+        return [output.cpu().detach().numpy() for output in outputs]
     
 class DualMaskTrainer:
     def __init__(self, device, net, 
