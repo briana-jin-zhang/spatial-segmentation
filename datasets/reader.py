@@ -87,9 +87,6 @@ class COCOADatasetGraph(Dataset):
         mask_path = os.path.join(self.graph_dir, str(idx) + '_mask')
         graph, mask = np.array(torch.load(graph_path)), np.array(torch.load(mask_path))
         
-        # Change graph values for classification
-        graph += 1
-        
         if self.transform:
             seed = np.random.randint(2147483647)
             self.seed_transform(seed)
