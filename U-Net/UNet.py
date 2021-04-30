@@ -70,7 +70,7 @@ class UNet(nn.Module):
         dec0 = self.conv(dec1)
         
         if self.classification:
-            dec0 = torch.sigmoid(dec0)
+#             dec0 = torch.sigmoid(dec0)
             dec0 = dec0.permute(1, 0, 2, 3)
             dec0 = torch.stack(torch.split(dec0, 3))
             dec0 = dec0.permute(2, 1, 0, 3, 4)
