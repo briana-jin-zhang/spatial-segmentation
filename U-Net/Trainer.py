@@ -70,18 +70,13 @@ class MaskTrainer:
                     
                     # Forward
                     self.optimizer.zero_grad()
-                    outputs = self.net(_in)
+                    output = self.net(_in)
                     
                     # Apply loss to masked outputs
-                    outputs, _out = [output.permute(0, 2, 3, 1) for output in outputs], _out.permute(0, 2, 3, 1)
+                    output, _out = output.permute(0, 2, 3, 1), _out.permute(0, 2, 3, 1)
                     _mask = _mask.squeeze()
-                    outputs, _out = [output[_mask != 0].float() for output in outputs], _out[_mask != 0].float()
-                    
-                    # Flatten outputs
-                    outputs = torch.dstack(outputs)
-                    _out = torch.flatten(_out).long()
-                    outputs = torch.flatten(outputs.permute(0, 2, 1), end_dim=1)
-                    loss = self.loss(outputs, _out)
+                    output, _out = output[_mask != 0].float(), _out[_mask != 0].float()
+                    loss = self.loss(output, _out)
                     
                     # Optimize
                     if phase == 'train':
