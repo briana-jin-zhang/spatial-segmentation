@@ -6,7 +6,7 @@ import torch.nn as nn
 
 class UNet(nn.Module):
 
-    def __init__(self, in_channels=3, out_channels=2, init_features=32):
+    def __init__(self, in_channels=3, out_channels=2, init_features=32, classification=True):
         super(UNet, self).__init__()
 
         features = init_features
@@ -37,6 +37,11 @@ class UNet(nn.Module):
             features * 2, features, kernel_size=2, stride=2
         )
         self.decoder1 = UNet._block(features * 2, features, name="dec1")
+        
+        if classification:
+            out_channels *= 3
+            
+        self.classification = classification
 
         self.conv = nn.Conv2d(
             in_channels=features, out_channels=out_channels, kernel_size=1
@@ -62,8 +67,15 @@ class UNet(nn.Module):
         dec1 = self.upconv1(dec2)
         dec1 = torch.cat((dec1, enc1), dim=1)
         dec1 = self.decoder1(dec1)
+        dec0 = self.conv(dec1)
         
-        return self.conv(dec1)
+        if self.classification:
+            dec0 = torch.sigmoid(dec0)
+            dec0 = dec0.permute(1, 0, 2, 3)
+            dec0 = torch.stack(torch.split(dec0, 3))
+            dec0 = dec0.permute(2, 1, 0, 3, 4)
+            
+        return dec0
 
     @staticmethod
     def _block(in_channels, features, name):
@@ -98,13 +110,15 @@ class UNet(nn.Module):
             )
         )
     
+    
 class UNetDual(nn.Module):
 
-    def __init__(self, in_channels=3, seg_out_channels=91, graph_out_channels=2, init_features=32):
+    def __init__(self, in_channels=3, seg_out_channels=91, graph_out_channels=2, init_features=32, classification=True):
         super(UNetDual, self).__init__()
         
         self.seg_out_channels = seg_out_channels
-        self.graph_out_channels = graph_out_channels
+        self.graph_out_channels = graph_out_channels * (3 if classification else 1)
+        self.classification = classification
 
         features = init_features
         self.encoder1 = UNet._block(in_channels, features, name="enc1")
@@ -161,7 +175,19 @@ class UNetDual(nn.Module):
         dec1 = self.decoder1(dec1)
         dec0 = self.conv(dec1)
         
-        return torch.sigmoid(dec0[:, :self.seg_out_channels]), dec0[:, self.seg_out_channels:]
+        seg_out = torch.sigmoid(dec0[:, :self.seg_out_channels])
+        graph_out = dec0[:, self.seg_out_channels:]
+        
+        if self.classification:
+            dec0 = graph_out
+            dec0 = torch.sigmoid(dec0)
+            dec0 = dec0.permute(1, 0, 2, 3)
+            dec0 = torch.stack(torch.split(dec0, 3))
+            dec0 = dec0.permute(2, 1, 0, 3, 4)
+            
+            return seg_out, graph_out
+        else:
+            return seg_out, graph_out
 
     @staticmethod
     def _block(in_channels, features, name):

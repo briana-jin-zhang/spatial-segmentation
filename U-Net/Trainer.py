@@ -26,7 +26,8 @@ class MaskTrainer:
                  mask_key = 2,
                  num_workers=0,
                  checkpoint_dir='./models/', 
-                 exp_name='net'):
+                 exp_name='net',
+                 mask=False):
         self.device = device
         self.net = net.to(device)
         self.loss = loss
@@ -46,6 +47,7 @@ class MaskTrainer:
             os.mkdir(checkpoint_dir)
         os.mkdir(self.checkpoint_dir)
         self.epochs_so_far = 0
+        self.mask = mask
     
     def train(self, epochs, checkpoint=False, train_loader=None, val_loader=None):
         # Phases and Logging
@@ -73,9 +75,10 @@ class MaskTrainer:
                     output = self.net(_in)
                     
                     # Apply loss to masked outputs
-                    output, _out = output.permute(0, 2, 3, 1), _out.permute(0, 2, 3, 1)
-                    _mask = _mask.squeeze()
-                    output, _out = output[_mask != 0].float(), _out[_mask != 0].float()
+                    if self.mask:
+                        output, _out = output.permute(0, 2, 3, 1), _out.permute(0, 2, 3, 1)
+                        _mask = _mask.squeeze()
+                        output, _out = output[_mask != 0].float(), _out[_mask != 0].float()
                     loss = self.loss(output, _out)
                     
                     # Optimize
