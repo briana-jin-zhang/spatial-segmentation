@@ -12,6 +12,7 @@ import os
 from tqdm import tqdm
 import time
 import pickle
+import umetrics
 
 class MaskTrainer:
     def __init__(self, device, net, 
@@ -60,7 +61,7 @@ class MaskTrainer:
         
         # Training
         for i in range(epochs):
-            epoch_data = { 'train_mean_loss': 0.0, 'val_mean_loss': 0.0 }
+            epoch_data = { 'train_mean_loss': 0.0, 'val_mean_loss': 0.0, 'train_mean_iou': 0.0, 'val_mean_iou': 0.0, 'train_mean_jaccard': 0.0, 'val_mean_jaccard': 0.0 }
             for phase, loader in phases.items():
                 if phase == 'train':
                     self.net.train()
@@ -69,12 +70,28 @@ class MaskTrainer:
                 
                 running_loss = 0.0
                 total, correct = 0, 0
+                running_iou, running_jaccard = 0.0, 0.0
                 for batch in tqdm(loader):
                     _in, _out, _mask = batch[self.in_key].to(self.device), batch[self.target_key].to(self.device), batch[self.mask_key].to(self.device)
                     
                     # Forward
                     self.optimizer.zero_grad()
                     output = self.net(_in)
+                    
+                    # metrics
+                    q = np.squeeze(output[:, 0, :, :])
+                    graph_pred = q.data.to(torch.device("cpu")).numpy()
+                    pred = graph_pred.transpose(0, 2, 3, 1)
+                    target = _out.data.to(torch.device("cpu")).numpy().transpose(0, 2, 3, 1)
+                    for i in range(target.shape[0]):
+                        result = umetrics.calculate(target[i], pred[i], strict=True)
+                        
+                        if len(result.per_object_IoU) > 0:
+                            running_iou += np.mean(result.per_object_IoU)
+                        tp = result.n_true_positives
+                        fn = result.n_false_negatives
+                        fp = result.n_false_positives
+                        running_jaccard += tp / (tp+fn+fp)                        
                     
                     # Apply loss to masked outputs
                     if self.mask:
@@ -99,6 +116,8 @@ class MaskTrainer:
                 
                 # Log phase results
                 epoch_data[phase + '_mean_loss'] = running_loss / len(loader)
+                epoch_data[phase + '_mean_iou'] = running_iou / len(loader)
+                epoch_data[phase + '_mean_jaccard'] = running_jaccard / len(loader)
 
             # Display Progress
             duration_elapsed = time.time() - start_time
