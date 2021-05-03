@@ -115,10 +115,9 @@ class MaskTrainer:
                         self.plot_predictions(_in[0].cpu().numpy(), output[0].cpu().detach().numpy(), _out[0].cpu().detach().numpy())
                         
                     # metrics
-                    q = np.squeeze(output[:, 0, :, :])
-                    graph_pred = q.cpu().detach().numpy()
+                    graph_pred = np.argmax(output, axis=1).cpu().clone().detach().numpy()
                     pred = graph_pred.transpose(0, 2, 3, 1)
-                    target = _out.cpu().detach().numpy().transpose(0, 2, 3, 1)
+                    target = _out.cpu().clone().detach().numpy().transpose(0, 2, 3, 1)
                     for i in range(target.shape[0]):
                         result = umetrics.calculate(target[i], pred[i], strict=True)
                         
