@@ -111,7 +111,7 @@ class MaskTrainer:
                     loss = self.loss(output, _out)
                     
                     # display
-                    if j == 0 and self.epochs_so_far % 5 == 0:
+                    if j == 0 and self.epochs_so_far % 5 == 4:
                         self.plot_predictions(_in[0].cpu().numpy(), output[0].cpu().detach().numpy(), _out[0].cpu().detach().numpy())
                         
                     # metrics
