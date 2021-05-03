@@ -29,7 +29,8 @@ class MaskTrainer:
                  checkpoint_dir='./models/', 
                  exp_name='net',
                  mask=False,
-                 hingeloss=False):
+                 hingeloss=False,
+                 classification=False):
         self.device = device
         self.net = net.to(device)
         self.loss = loss
@@ -51,8 +52,26 @@ class MaskTrainer:
         self.epochs_so_far = 0
         self.mask = mask
         self.hingeloss = hingeloss
+        self.classification = classification
     
-    def train(self, epochs, checkpoint=False, train_loader=None, val_loader=None):
+    def plot_predictions(self, img, graph_pred, graph_target):
+        plt.subplot(1, 3, 1)
+        plt.imshow(img.permute(1, 2, 0))
+        plt.title("Input")
+        plt.subplot(1, 3, 2)
+        plt.imshow(graph_target.transpose(1, 2, 0)[:, :, 0])
+        plt.title("GT Graph 0")
+        plt.subplot(1, 3, 3)
+        if self.classification:
+            graph_pred = np.squeeze(graph_pred[:, 0, :, :])
+            graph_pred = np.squeeze(np.argmax(graph_pred, axis=0))
+            plt.imshow(graph_pred - 1)
+        else:
+            plt.imshow(graph_pred.transpose(1, 2, 0)[:, :, 0])
+            plt.title("Pred Graph 0")
+        plt.show()
+    
+    def train(self, epochs, checkpoint=False, train_loader=None, val_loader=None, start_epoch=0):
         # Phases and Logging
         phases = { 'train': train_loader if train_loader else self.train_loader, 
                    'val': val_loader if val_loader else self.val_loader }
@@ -60,7 +79,7 @@ class MaskTrainer:
         train_log = []
         
         # Training
-        for i in range(epochs):
+        for i in range(start_epoch, epochs):
             epoch_data = { 'train_mean_loss': 0.0, 'val_mean_loss': 0.0, 'train_mean_iou': 0.0, 'val_mean_iou': 0.0, 'train_mean_jaccard': 0.0, 'val_mean_jaccard': 0.0 }
             for phase, loader in phases.items():
                 if phase == 'train':
@@ -76,8 +95,24 @@ class MaskTrainer:
                     
                     # Forward
                     self.optimizer.zero_grad()
-                    output = self.net(_in)
+                    output = self.net(_in) 
                     
+                    # Apply loss to masked outputs
+                    if self.mask:
+                        output, _out = output.permute(0, 2, 3, 1), _out.permute(0, 2, 3, 1)
+                        _mask = _mask.squeeze()
+                        output, _out = output[_mask != 0].float(), _out[_mask != 0].float()
+                        
+#                     if self.hingeloss:
+#                         output = output.reshape(output.shape[0], output.shape[1]*output.shape[2]*output.shape[3])
+#                         _out = _out.reshape(_out.shape[0], _out.shape[1]*_out.shape[2]*_out.shape[3])
+            
+                    loss = self.loss(output, _out)
+                    
+                    # display
+                    if i % 5 == 0:
+                        self.plot_predictions(_in[0], output[0].to(torch.device("cpu")).detach().numpy(), _out[0].cpu().detach().numpy())
+                        
                     # metrics
                     q = np.squeeze(output[:, 0, :, :])
                     graph_pred = q.data.to(torch.device("cpu")).numpy()
@@ -91,19 +126,7 @@ class MaskTrainer:
                         tp = result.n_true_positives
                         fn = result.n_false_negatives
                         fp = result.n_false_positives
-                        running_jaccard += tp / (tp+fn+fp)                        
-                    
-                    # Apply loss to masked outputs
-                    if self.mask:
-                        output, _out = output.permute(0, 2, 3, 1), _out.permute(0, 2, 3, 1)
-                        _mask = _mask.squeeze()
-                        output, _out = output[_mask != 0].float(), _out[_mask != 0].float()
-                        
-#                     if self.hingeloss:
-#                         output = output.reshape(output.shape[0], output.shape[1]*output.shape[2]*output.shape[3])
-#                         _out = _out.reshape(_out.shape[0], _out.shape[1]*_out.shape[2]*_out.shape[3])
-
-                    loss = self.loss(output, _out)
+                        running_jaccard += tp / (tp+fn+fp)
                     
                     # Optimize
                     if phase == 'train':
@@ -124,10 +147,11 @@ class MaskTrainer:
             print('\n-- Finished Epoch {}/{} --'.format(i, epochs - 1))
             print('Training Loss: {}'.format(epoch_data['train_mean_loss']))
             print('Validation Loss: {}'.format(epoch_data['val_mean_loss']))
-            print('Training Mean IoU: {}'.format(epoch_data['train_mean_iou']))
-            print('Validation Mean IoU: {}'.format(epoch_data['val_mean_iou']))
-            print('Training Mean Jaccard: {}'.format(epoch_data['train_mean_jaccard']))
-            print('Validation Mean Jaccard: {}'.format(epoch_data['val_mean_jaccard']))
+            if i % 5 == 0:
+                print('Training Mean IoU: {}'.format(epoch_data['train_mean_iou']))
+                print('Validation Mean IoU: {}'.format(epoch_data['val_mean_iou']))
+                print('Training Mean Jaccard: {}'.format(epoch_data['train_mean_jaccard']))
+                print('Validation Mean Jaccard: {}'.format(epoch_data['val_mean_jaccard']))
             print('Time since start: {}'.format(duration_elapsed))
             epoch_data['time_elapsed'] = duration_elapsed
             train_log.append(epoch_data)
@@ -139,7 +163,7 @@ class MaskTrainer:
             # Checkpoint
             checkpoint_time = time.time()
             if checkpoint:
-                path = self.checkpoint_dir + 'checkpoint_optim_' + str(self.epochs_so_far) + '_' + str(checkpoint_time)
+                path = self.checkpoint_dir + 'checkpoint_optim_' + str(self.epochs_so_far)
                 torch.save({
                     'optim': self.optimizer.state_dict(),
                     'sched': self.scheduler.state_dict(),
@@ -150,7 +174,7 @@ class MaskTrainer:
             self.epochs_so_far += 1
             
             # Save train_log
-            path = self.checkpoint_dir + 'train_log_' + str(checkpoint_time) 
+            path = self.checkpoint_dir + 'train_log_' + str(self.epochs_so_far)
             with open(path, 'wb') as fp:
                 pickle.dump(train_log, fp)
                 
