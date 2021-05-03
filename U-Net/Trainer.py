@@ -90,7 +90,7 @@ class MaskTrainer:
                 running_loss = 0.0
                 total, correct = 0, 0
                 running_iou, running_jaccard = 0.0, 0.0
-                for batch in tqdm(loader):
+                for j, batch in enumerate(tqdm(loader)):
                     _in, _out, _mask = batch[self.in_key].to(self.device), batch[self.target_key].to(self.device), batch[self.mask_key].to(self.device)
                     
                     
@@ -118,8 +118,8 @@ class MaskTrainer:
                     graph_pred = np.argmax(output, axis=1).cpu().clone().detach().numpy()
                     pred = graph_pred.transpose(0, 2, 3, 1)
                     target = _out.cpu().clone().detach().numpy().transpose(0, 2, 3, 1)
-                    for i in range(target.shape[0]):
-                        result = umetrics.calculate(target[i], pred[i], strict=True)
+                    for k in range(target.shape[0]):
+                        result = umetrics.calculate(target[k], pred[k], strict=True)
                         
                         if len(result.per_object_IoU) > 0:
                             running_iou += np.mean(result.per_object_IoU)
@@ -226,22 +226,22 @@ class DualMaskTrainer:
         self.mask = mask
         self.classification = classification
         
-    def plot_predictions_dual(img, graph_pred, graph_target, seg_pred, seg_target):
+    def plot_predictions_dual(self, img, graph_pred, graph_target, seg_pred, seg_target):
         plt.figure(figsize=(15, 5))
         plt.subplot(1, 5, 1)
-        plt.imshow(img.permute(1, 2, 0))
+        plt.imshow(img.transpose(1, 2, 0))
         plt.title("Input")
         plt.subplot(1, 5, 2)
         plt.imshow(graph_target.transpose(1, 2, 0)[:, :, 0])
         plt.title("GT Graph 0")
         plt.subplot(1, 5, 3)
-        plt.imshow(graph_pred.transpose(1, 2, 0)[:, :, 0])
+        plt.imshow(graph_pred.transpose(1, 2, 3, 0)[0, :, :, 0].squeeze())
         plt.title("Pred Graph 0")
         plt.subplot(1, 5, 4)
-        plt.imshow(seg_target.transpose(1, 2, 0))
+        plt.imshow(seg_target)
         plt.title("GT Segmentation")
         plt.subplot(1, 5, 5)
-        plt.imshow(seg_pred.transpose(1, 2, 0)[:, :, 0])
+        plt.imshow(seg_pred)
         plt.title("Pred Segmentation")
         plt.show()
     
@@ -272,7 +272,7 @@ class DualMaskTrainer:
                 total, correct = 0, 0
                 running_iou_seg, running_jaccard_seg = 0.0, 0.0
                 running_iou_graph, running_jaccard_graph = 0.0, 0.0
-                for batch in tqdm(loader):
+                for j, batch in enumerate(tqdm(loader)):
                     _in, _out, _mask = batch[self.in_key].to(self.device), batch[self.target_key], batch[self.mask_key].to(self.device)
                     _out_seg, _out_graph = _out
                     _out_seg, _out_graph = _out_seg.to(self.device).squeeze().long(), _out_graph.to(self.device).long()
@@ -301,9 +301,9 @@ class DualMaskTrainer:
                     target = _out_graph.data.to(torch.device("cpu")).numpy().transpose(0, 2, 3, 1)
                     seg_pred = np.argmax(output_seg.clone().detach().cpu().numpy().transpose(0, 2, 3, 1), axis=3)
                     seg_target = _out_seg.data.to(torch.device("cpu")).numpy()
-                    for i in range(target.shape[0]):
-                        result_graph = umetrics.calculate(target[i], pred[i], strict=True)
-                        result_seg = umetrics.calculate(seg_target[i], seg_pred[i], strict=True)
+                    for k in range(target.shape[0]):
+                        result_graph = umetrics.calculate(target[k], pred[k], strict=True)
+                        result_seg = umetrics.calculate(seg_target[k], seg_pred[k], strict=True)
                         
                         if len(result_graph.per_object_IoU) > 0:
                             running_iou_graph += np.mean(result_graph.per_object_IoU)
@@ -313,8 +313,14 @@ class DualMaskTrainer:
                         running_jaccard_graph += tp / (tp+fn+fp)
                     
                     # display
-#                     if j == 0 and self.epochs_so_far % 5 == 4:
-#                         self.plot_predictions(_in[0].cpu().numpy(), output[0].cpu().detach().numpy(), _out[0].cpu().detach().numpy())
+                    if j == 0 and self.epochs_so_far % 5 == 4:
+                        _in_cpu = _in[0].cpu().numpy()
+                        output_graph_cpu = output_graph[0].cpu().detach().numpy()
+                        _out_graph_cpu = _out_graph[0].cpu().numpy()
+                        output_seg_cpu = output_seg[0].cpu().detach().numpy()
+                        output_seg_cpu = np.argmax(output_seg[0].cpu().detach().numpy(), axis=0)
+                        _out_seg_cpu = _out_seg[0].cpu().numpy()
+                        self.plot_predictions_dual(_in_cpu, output_graph_cpu, _out_graph_cpu, output_seg_cpu, _out_seg_cpu)
                     
                     # Optimize
                     if phase == 'train':
