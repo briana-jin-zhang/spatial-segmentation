@@ -199,13 +199,14 @@ class COCOADatasetGraph(Dataset):
         
 class COCOADatasetDual(Dataset):
 
-    def __init__(self, annot_fn, img_root, graph_dir, transform=None):
+    def __init__(self, annot_fn, img_root, graph_dir, transform=None, classification=False):
         data = cvb.load(annot_fn)
         self.img_root = img_root
         self.graph_dir = graph_dir
         self.transform = transform
         self.images_info = data['images']
         self.annot_info = data['annotations']
+        self.classification = classification
 
     def __len__(self):
         return len(self.images_info)
@@ -238,6 +239,10 @@ class COCOADatasetDual(Dataset):
             mask = self.transform(mask)
             self.seed_transform(seed)
             segmentation = self.transform(segmentation)
+            
+        if self.classification:
+            graph += 1
+            graph = graph.long()
         
         return image, (segmentation, graph), mask
     

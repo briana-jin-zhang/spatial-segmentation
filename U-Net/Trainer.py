@@ -90,7 +90,7 @@ class MaskTrainer:
                 running_loss = 0.0
                 total, correct = 0, 0
                 running_iou, running_jaccard = 0.0, 0.0
-                for j, batch in enumerate(tqdm(loader)):
+                for batch in tqdm(loader):
                     _in, _out, _mask = batch[self.in_key].to(self.device), batch[self.target_key].to(self.device), batch[self.mask_key].to(self.device)
                     
                     
@@ -201,7 +201,9 @@ class DualMaskTrainer:
                  mask_key = 2,
                  num_workers=0,
                  checkpoint_dir='./models/', 
-                 exp_name='net'):
+                 exp_name='net',
+                 mask=False,
+                 classification=False):
         self.device = device
         self.net = net.to(device)
         self.losses = losses
@@ -222,8 +224,10 @@ class DualMaskTrainer:
             os.mkdir(checkpoint_dir)
         os.mkdir(self.checkpoint_dir)
         self.epochs_so_far = 0
+        self.mask = mask
+        self.classification = classification
     
-    def train(self, epochs, checkpoint=False, train_loader=None, val_loader=None):
+    def train(self, epochs, checkpoint=False, train_loader=None, val_loader=None, start_epoch=0):
         loss_seg, loss_graph = self.losses
         
         # Phases and Logging
@@ -233,7 +237,7 @@ class DualMaskTrainer:
         train_log = []
         
         # Training
-        for i in range(epochs):
+        for i in range(start_epoch, epochs):
             epoch_data = { 'train_mean_loss_seg': 0.0, 'train_mean_loss_graph': 0.0,
                            'val_mean_loss_seg': 0.0, 'val_mean_loss_graph': 0.0 }
             for phase, loader in phases.items():
@@ -247,18 +251,24 @@ class DualMaskTrainer:
                 for batch in tqdm(loader):
                     _in, _out, _mask = batch[self.in_key].to(self.device), batch[self.target_key], batch[self.mask_key].to(self.device)
                     _out_seg, _out_graph = _out
-                    _out_seg, _out_graph = _out_seg.to(self.device).squeeze().long(), _out_graph.to(self.device)
+                    _out_seg, _out_graph = _out_seg.to(self.device).squeeze().long(), _out_graph.to(self.device).long()
                     
                     # Forward
                     self.optimizer.zero_grad()
                     output_seg, output_graph = self.net(_in)
                     
                     # Apply loss to masked outputs
-                    output_graph, _out_graph = output_graph.permute(0, 2, 3, 1), _out_graph.permute(0, 2, 3, 1)
-                    _mask = _mask.squeeze()
-                    output_graph, _out_graph = output_graph[_mask != 0].float(), _out_graph[_mask != 0].float()
+                    if self.mask:
+                        output_graph, _out_graph = output_graph.permute(0, 2, 3, 1), _out_graph.permute(0, 2, 3, 1)
+                        _mask = _mask.squeeze()
+                        output_graph, _out_graph = output_graph[_mask != 0].float(), _out_graph[_mask != 0].long()
                     
-                    loss0, loss1 = loss_seg(output_seg, _out_seg), loss_graph(output_graph, _out_graph)
+                    loss0, loss1 = loss_seg(output_seg, _out_seg), 0
+                    output_graph = output_graph.permute(1, 0, 2, 3)
+                    output_graph = torch.stack(torch.split(output_graph, 3))
+                    output_graph = output_graph.permute(2, 1, 0, 3, 4)
+                    loss1 = loss_graph(output_graph, _out_graph)
+                    
                     loss = self.alpha * loss0 + (1 - self.alpha) * loss1
                     
                     # Optimize

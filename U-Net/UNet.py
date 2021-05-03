@@ -150,7 +150,7 @@ class UNetDual(nn.Module):
         self.decoder1 = UNet._block(features * 2, features, name="dec1")
 
         self.conv = nn.Conv2d(
-            in_channels=features, out_channels=(seg_out_channels+graph_out_channels), kernel_size=1
+            in_channels=features, out_channels=(seg_out_channels+self.graph_out_channels), kernel_size=1
         )
 
     def forward(self, x):
@@ -174,13 +174,13 @@ class UNetDual(nn.Module):
         dec1 = torch.cat((dec1, enc1), dim=1)
         dec1 = self.decoder1(dec1)
         dec0 = self.conv(dec1)
-        
+                
         seg_out = torch.sigmoid(dec0[:, :self.seg_out_channels])
         graph_out = dec0[:, self.seg_out_channels:]
         
         if self.classification:
             dec0 = graph_out
-            dec0 = torch.sigmoid(dec0)
+#             dec0 = torch.sigmoid(dec0)
             dec0 = dec0.permute(1, 0, 2, 3)
             dec0 = torch.stack(torch.split(dec0, 3))
             dec0 = dec0.permute(2, 1, 0, 3, 4)
