@@ -90,7 +90,7 @@ class MaskTrainer:
                 running_loss = 0.0
                 total, correct = 0, 0
                 running_iou, running_jaccard = 0.0, 0.0
-                for batch in tqdm(loader):
+                for j, batch in enumerate(tqdm(loader)):
                     _in, _out, _mask = batch[self.in_key].to(self.device), batch[self.target_key].to(self.device), batch[self.mask_key].to(self.device)
                     
                     
@@ -111,7 +111,7 @@ class MaskTrainer:
                     loss = self.loss(output, _out)
                     
                     # display
-                    if self.epochs_so_far % 5 == 0:
+                    if j == 0 and self.epochs_so_far % 5 == 0:
                         self.plot_predictions(_in[0].cpu().numpy(), output[0].cpu().detach().numpy(), _out[0].cpu().detach().numpy())
                         
                     # metrics
