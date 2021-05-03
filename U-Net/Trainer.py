@@ -124,6 +124,10 @@ class MaskTrainer:
             print('\n-- Finished Epoch {}/{} --'.format(i, epochs - 1))
             print('Training Loss: {}'.format(epoch_data['train_mean_loss']))
             print('Validation Loss: {}'.format(epoch_data['val_mean_loss']))
+            print('Training Mean IoU: {}'.format(epoch_data['train_mean_iou']))
+            print('Validation Mean IoU: {}'.format(epoch_data['val_mean_iou']))
+            print('Training Mean Jaccard: {}'.format(epoch_data['train_mean_jaccard']))
+            print('Validation Mean Jaccard: {}'.format(epoch_data['val_mean_jaccard']))
             print('Time since start: {}'.format(duration_elapsed))
             epoch_data['time_elapsed'] = duration_elapsed
             train_log.append(epoch_data)
@@ -135,8 +139,14 @@ class MaskTrainer:
             # Checkpoint
             checkpoint_time = time.time()
             if checkpoint:
-                path = self.checkpoint_dir + 'checkpoint_' + str(self.epochs_so_far) + '_' + str(checkpoint_time)
-                torch.save(self.net.state_dict(), path)
+                path = self.checkpoint_dir + 'checkpoint_optim_' + str(self.epochs_so_far) + '_' + str(checkpoint_time)
+                torch.save({
+                    'optim': self.optimizer.state_dict(),
+                    'sched': self.scheduler.state_dict(),
+                    'state_dict': self.net.state_dict(),
+                    'start_epoch': self.epochs_so_far + 1,
+                    'log': train_log
+                }, path)
             self.epochs_so_far += 1
             
             # Save train_log
