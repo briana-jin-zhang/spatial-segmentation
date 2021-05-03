@@ -56,7 +56,7 @@ class MaskTrainer:
     
     def plot_predictions(self, img, graph_pred, graph_target):
         plt.subplot(1, 3, 1)
-        plt.imshow(img.permute(1, 2, 0))
+        plt.imshow(img.transpose(1, 2, 0))
         plt.title("Input")
         plt.subplot(1, 3, 2)
         plt.imshow(graph_target.transpose(1, 2, 0)[:, :, 0])
@@ -93,6 +93,7 @@ class MaskTrainer:
                 for batch in tqdm(loader):
                     _in, _out, _mask = batch[self.in_key].to(self.device), batch[self.target_key].to(self.device), batch[self.mask_key].to(self.device)
                     
+                    
                     # Forward
                     self.optimizer.zero_grad()
                     output = self.net(_in) 
@@ -110,14 +111,14 @@ class MaskTrainer:
                     loss = self.loss(output, _out)
                     
                     # display
-                    if i % 5 == 0:
-                        self.plot_predictions(_in[0], output[0].to(torch.device("cpu")).detach().numpy(), _out[0].cpu().detach().numpy())
+                    if self.epochs_so_far % 5 == 0:
+                        self.plot_predictions(_in[0].cpu().numpy(), output[0].cpu().detach().numpy(), _out[0].cpu().detach().numpy())
                         
                     # metrics
                     q = np.squeeze(output[:, 0, :, :])
-                    graph_pred = q.data.to(torch.device("cpu")).numpy()
+                    graph_pred = q.cpu().detach().numpy()
                     pred = graph_pred.transpose(0, 2, 3, 1)
-                    target = _out.data.to(torch.device("cpu")).numpy().transpose(0, 2, 3, 1)
+                    target = _out.cpu().detach().numpy().transpose(0, 2, 3, 1)
                     for i in range(target.shape[0]):
                         result = umetrics.calculate(target[i], pred[i], strict=True)
                         
