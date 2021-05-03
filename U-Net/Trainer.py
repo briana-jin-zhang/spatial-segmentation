@@ -226,6 +226,25 @@ class DualMaskTrainer:
         self.epochs_so_far = 0
         self.mask = mask
         self.classification = classification
+        
+    def plot_predictions_dual(img, graph_pred, graph_target, seg_pred, seg_target):
+        plt.figure(figsize=(15, 5))
+        plt.subplot(1, 5, 1)
+        plt.imshow(img.permute(1, 2, 0))
+        plt.title("Input")
+        plt.subplot(1, 5, 2)
+        plt.imshow(graph_target.transpose(1, 2, 0)[:, :, 0])
+        plt.title("GT Graph 0")
+        plt.subplot(1, 5, 3)
+        plt.imshow(graph_pred.transpose(1, 2, 0)[:, :, 0])
+        plt.title("Pred Graph 0")
+        plt.subplot(1, 5, 4)
+        plt.imshow(seg_target.transpose(1, 2, 0))
+        plt.title("GT Segmentation")
+        plt.subplot(1, 5, 5)
+        plt.imshow(seg_pred.transpose(1, 2, 0)[:, :, 0])
+        plt.title("Pred Segmentation")
+        plt.show()
     
     def train(self, epochs, checkpoint=False, train_loader=None, val_loader=None, start_epoch=0):
         loss_seg, loss_graph = self.losses
@@ -239,7 +258,11 @@ class DualMaskTrainer:
         # Training
         for i in range(start_epoch, epochs):
             epoch_data = { 'train_mean_loss_seg': 0.0, 'train_mean_loss_graph': 0.0,
-                           'val_mean_loss_seg': 0.0, 'val_mean_loss_graph': 0.0 }
+                           'val_mean_loss_seg': 0.0, 'val_mean_loss_graph': 0.0, 
+                          'train_mean_iou_seg': 0.0, 'val_mean_iou_seg': 0.0, 
+                          'train_mean_jaccard_seg': 0.0, 'val_mean_jaccard_seg': 0.0,
+                         'train_mean_iou_graph': 0.0, 'val_mean_iou_graph': 0.0, 
+                          'train_mean_jaccard_graph': 0.0, 'val_mean_jaccard_graph': 0.0}
             for phase, loader in phases.items():
                 if phase == 'train':
                     self.net.train()
@@ -248,6 +271,8 @@ class DualMaskTrainer:
                 
                 running_losses = np.zeros(2)
                 total, correct = 0, 0
+                running_iou_seg, running_jaccard_seg = 0.0, 0.0
+                running_iou_graph, running_jaccard_graph = 0.0, 0.0
                 for batch in tqdm(loader):
                     _in, _out, _mask = batch[self.in_key].to(self.device), batch[self.target_key], batch[self.mask_key].to(self.device)
                     _out_seg, _out_graph = _out
@@ -271,6 +296,23 @@ class DualMaskTrainer:
                     
                     loss = self.alpha * loss0 + (1 - self.alpha) * loss1
                     
+                    # metrics
+                    graph_pred = np.argmax(output_graph.data.to(torch.device("cpu")).numpy(), axis=1)
+                    pred = graph_pred.transpose(0, 2, 3, 1)
+                    target = _out_graph.data.to(torch.device("cpu")).numpy().transpose(0, 2, 3, 1)
+                    seg_pred = np.argmax(output_seg.clone().detach().cpu().numpy().transpose(0, 2, 3, 1), axis=3)
+                    seg_target = _out_seg.data.to(torch.device("cpu")).numpy()
+                    for i in range(target.shape[0]):
+                        result_graph = umetrics.calculate(target[i], pred[i], strict=True)
+                        result_seg = umetrics.calculate(seg_target[i], seg_pred[i], strict=True)
+                        
+                        if len(result_graph.per_object_IoU) > 0:
+                            running_iou_graph += np.mean(result_graph.per_object_IoU)
+                        tp = result_graph.n_true_positives
+                        fn = result_graph.n_false_negatives
+                        fp = result_graph.n_false_positives
+                        running_jaccard_graph += tp / (tp+fn+fp)
+                    
                     # display
 #                     if j == 0 and self.epochs_so_far % 5 == 4:
 #                         self.plot_predictions(_in[0].cpu().numpy(), output[0].cpu().detach().numpy(), _out[0].cpu().detach().numpy())
@@ -288,6 +330,10 @@ class DualMaskTrainer:
                 running_loss_seg, running_loss_graph = running_losses
                 epoch_data[phase + '_mean_loss_seg'] = running_loss_seg / len(loader)
                 epoch_data[phase + '_mean_loss_graph'] = running_loss_graph / len(loader)
+                epoch_data[phase + '_mean_iou_seg'] = running_iou_seg / len(loader)
+                epoch_data[phase + '_mean_jaccard_seg'] = running_jaccard_seg / len(loader)
+                epoch_data[phase + '_mean_iou_graph'] = running_iou_graph / len(loader)
+                epoch_data[phase + '_mean_jaccard_graph'] = running_jaccard_graph / len(loader)
 
             # Display Progress
             duration_elapsed = time.time() - start_time
@@ -296,8 +342,16 @@ class DualMaskTrainer:
             print('Training Loss (Graph): {}'.format(epoch_data['train_mean_loss_graph']))
             print('Validation Loss (Segmentation): {}'.format(epoch_data['val_mean_loss_seg']))
             print('Validation Loss (Graph): {}'.format(epoch_data['val_mean_loss_graph']))
+            if i % 5 == 4:
+                print('Training Mean IoU (Segmentation): {}'.format(epoch_data['train_mean_iou_seg']))
+                print('Validation Mean IoU (Segmentation): {}'.format(epoch_data['val_mean_iou_seg']))
+                print('Training Mean Jaccard (Segmentation): {}'.format(epoch_data['train_mean_jaccard_seg']))
+                print('Validation Mean Jaccard (Segmentation): {}'.format(epoch_data['val_mean_jaccard_seg']))
+                print('Training Mean IoU (Graph): {}'.format(epoch_data['train_mean_iou_graph']))
+                print('Validation Mean IoU (Graph): {}'.format(epoch_data['val_mean_iou_graph']))
+                print('Training Mean Jaccard (Graph): {}'.format(epoch_data['train_mean_jaccard_graph']))
+                print('Validation Mean Jaccard (Graph): {}'.format(epoch_data['val_mean_jaccard_graph']))
             print('Time since start: {}'.format(duration_elapsed))
-            epoch_data['time_elapsed'] = duration_elapsed
             train_log.append(epoch_data)
             
             # Scheduler
