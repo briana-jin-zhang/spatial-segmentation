@@ -1,8 +1,8 @@
-#README
+# README
 ## Paper 
 [2.1D Relative Depth Recovery](https://drive.google.com/file/d/1eaC-Pqdc-JrOzCwtmvq8Jvs8zZL59czx/view?usp=sharing)
 
-#ORIGINAL README
+# ORIGINAL README
 
 ## Paper
 Xiaohang Zhan, Xingang Pan, Bo Dai, Ziwei Liu, Dahua Lin, Chen Change Loy, "[Self-Supervised Scene De-occlusion](https://arxiv.org/abs/2004.02788)", accepted to CVPR 2020 as an **Oral Paper**. [[Project page](https://xiaohangzhan.github.io/projects/deocclusion/)].
